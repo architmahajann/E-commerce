@@ -12,6 +12,10 @@ Backend API for a shopping application built with Django and Django REST Framewo
 - Order notification emails through SMTP
 - Django admin for users, products, carts, and orders
 - PostgreSQL database support
+- React/Vite storefront in `frontend/`
+- Atomic stock-safe checkout with row locking
+- Celery order notifications with retry handling
+- Request throttling and rotating, blacklisted refresh tokens
 
 ## Architecture
 
@@ -27,7 +31,7 @@ flowchart TD
 		Carts --> DB
 		Orders --> DB
 		Products --> Media[Media storage]
-		Orders --> SMTP[SMTP email service]
+		Orders --> Queue[Celery task queue] --> SMTP[SMTP email service]
 ```
 
 ### Application boundaries
@@ -126,11 +130,31 @@ The application reads these values with `python-decouple`. In production, use a 
 
 ```bash
 python manage.py migrate
+python manage.py seed_products
 python manage.py createsuperuser
 python manage.py runserver
 ```
 
 The development server runs at `http://127.0.0.1:8000/`.
+
+### React frontend
+
+In a second terminal:
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+The storefront runs at `http://localhost:5173/` and uses `VITE_API_URL` when set,
+defaulting to `http://127.0.0.1:8000/api/v1`.
+
+For asynchronous order email delivery, start a Redis broker and a Celery worker:
+
+```powershell
+celery -A clickmart_main worker --loglevel=INFO
+```
 
 ## API Reference
 

@@ -3,7 +3,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from .models import Cart, CartItem
 from rest_framework.response import Response
-from .serializers import CartSerializer, CartItemSerializer
+from .serializers import AddToCartSerializer, CartSerializer, CartItemSerializer
 from products.models import Product
 from rest_framework import status
 
@@ -22,15 +22,10 @@ class AddToCartView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        # take the input
-        product_id = request.data.get('product_id')
-        quantity = request.data.get('quantity') # 2
-
-        if not product_id:
-            return Response({'error': 'product_id is required'})
-        
-        # get the product
-        product = get_object_or_404(Product, id=product_id, is_active=True)
+        input_serializer = AddToCartSerializer(data=request.data)
+        input_serializer.is_valid(raise_exception=True)
+        product = input_serializer.validated_data['product']
+        quantity = input_serializer.validated_data['quantity']
         
         # get or create the cart
         cart, _ = Cart.objects.get_or_create(user=request.user)
@@ -40,7 +35,10 @@ class AddToCartView(APIView):
 
         if not created: # cart item already exist
             # item.quantity = item.quantity + quantity
-            item.quantity += int(quantity)
+            if item.quantity + quantity > product.stock:
+                return Response({'quantity': 'Requested quantity exceeds available stock.'},
+                                status=status.HTTP_400_BAD_REQUEST)
+            item.quantity += quantity
             item.save()
         
         serializer = CartSerializer(cart)
@@ -52,10 +50,14 @@ class ManageCartItemView(APIView):
 
     def patch(self, request, item_id):
         # validate
-        if 'change' not in request.data:
-            return Response({"error": "Provide 'change' field"})
-        
-        change = int(request.data.get('change')) # +1 or -1
+        try:
+            change = int(request.data.get('change'))
+        except (TypeError, ValueError):
+            return Response({"change": "Provide a valid integer change."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        if change not in (-1, 1):
+            return Response({"change": "Change must be -1 or 1."},
+                            status=status.HTTP_400_BAD_REQUEST)
 
         item = get_object_or_404(CartItem, pk=item_id, cart__user=request.user)
         product = item.product
